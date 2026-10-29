@@ -1,6 +1,8 @@
 import { parseFeed, type AnyFeed } from "feedsmith"
 import "./style.css"
 
+const COLUMN_WIDTH = 200 //px
+
 export type ParagraphContent = {
     type: "paragraph",
     text: string
@@ -27,7 +29,8 @@ export type Feed = {
     url: string,
     corsProxy: boolean,
     type: "rss" | "atom" | "rdf" | "json",
-    category: "news" | "comics"
+    category: "news" | "comics",
+    scrape: boolean
 }
 
 export type Article = {
@@ -36,7 +39,7 @@ export type Article = {
     title: string,
     desc: string,
     contents: AnyContent[],
-    link: string
+    link: string,
 }
 
 const templateFeeds: Feed[] = [
@@ -46,7 +49,17 @@ const templateFeeds: Feed[] = [
         url: "https://yle.fi/rss/uutiset/paauutiset",
         corsProxy: true,
         type: "rss",
-        category: "news"
+        category: "news",
+        scrape: true
+    },
+    {
+        id: "nyt",
+        name: "New York Times",
+        url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+        corsProxy: false,
+        type: "rss",
+        category: "news",
+        scrape: false
     },
     {
         id: "hs",
@@ -54,7 +67,8 @@ const templateFeeds: Feed[] = [
         url: "https://www.hs.fi/rss/tuoreimmat.xml",
         corsProxy: false,
         type: "rss",
-        category: "news"
+        category: "news",
+        scrape: true
     },
     {
         id: "xkcd",
@@ -62,7 +76,8 @@ const templateFeeds: Feed[] = [
         url: "https://xkcd.com/atom.xml",
         corsProxy: true,
         type: "atom",
-        category: "comics"
+        category: "comics",
+        scrape: false
     }
 ]
 
@@ -76,21 +91,30 @@ async function getFeed(feed: Feed) {
 
 async function renderPaper() {
     const parsed: [Feed, AnyFeed][] = (await Promise.all(feeds.map(async f => ([f, await getFeed(f)]))))
-    console.log(parsed)
-    const combinedArticles: Article[] = (await Promise.all(parsed.map(p => parseArticles(p[0], p[1])))).flat()
-    console.log(combinedArticles)
+    const combinedArticles: Article[] = (await Promise.all(parsed.map(p => parseArticles(p[0], p[1])))).flat().sort(() => Math.random() - 0.5)
+    const html = combinedArticles.map(articleToHTML)
+    document.body.innerHTML = `<section>${html.join("</section><section>")}</section>`
 }
 
 async function parseArticles(feed: Feed, feedData: AnyFeed): Promise<Article[]> {
     switch (feedData.format) {
         case "rss":
-            return await Promise.all(feedData.feed.items?.slice(0,1).map<Promise<Article>>(async i => ({
+            return await Promise.all(feedData.feed.items?.slice(0,10).map<Promise<Article>>(async i => ({
                 source: feed,
                 time: i.pubDate || new Date().toISOString(),
                 title: i.title || "",
                 desc: i.description || "",
-                contents: await getContents(i.link || "", feed),
+                contents: feed.scrape ? (await getContents(i.link || "", feed)).filter(a => a.type == "paragraph" ? a.text != i.description: true) : [],
                 link: i.link || ""
+            })) || [])
+        case "atom":
+            return await Promise.all(feedData.feed.entries?.slice(0,1).map<Promise<Article>>(async e => ({
+                contents: feed.scrape ? (await getContents(e.links![0].href || "", feed)).filter(a => a.type == "paragraph" ? a.text != e.summary?.value: true) : [],
+                desc: e.summary?.value || "",
+                link: e.links![0].href || "",
+                source: feed,
+                time: e.updated || new Date().toISOString(),
+                title: e.title?.value || ""
             })) || [])
         default:
             return []
@@ -130,6 +154,27 @@ async function getContents(feedUrl: string, feed: Feed): Promise<AnyContent[]> {
         }
     })
     return contents
+}
+
+function articleToHTML(a: Article): string {
+    let text = `
+    <h1>${a.title}</h1>
+    <p style="font-size: 1.5em;">${a.desc}</p>
+    `
+    a.contents.forEach(c => {
+        switch (c.type) {
+            case "paragraph":
+                text += `<p>${c.text}</p>`
+                break
+            case "header":
+                text += `<h${c.level}>${c.text}</h${c.level}>`
+                break
+            case "image":
+                text += `<figure><img src="${c.src}" alt="${c.alt}">${c.caption ? `<figcaption>${c.caption}</figcaption>` : ""}</figure>`
+                break
+        }
+    })
+    return text
 }
 
 
