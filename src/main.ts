@@ -45,7 +45,7 @@ export type Article = {
 const templateFeeds: Feed[] = [
     {
         id: "yle_main",
-        name: "Yle main news",
+        name: "Yle Main News",
         url: "https://yle.fi/rss/uutiset/paauutiset",
         corsProxy: true,
         type: "rss",
@@ -63,7 +63,7 @@ const templateFeeds: Feed[] = [
     },
     {
         id: "hs",
-        name: "HS Helsinki",
+        name: "HS Latest",
         url: "https://www.hs.fi/rss/tuoreimmat.xml",
         corsProxy: false,
         type: "rss",
@@ -71,13 +71,22 @@ const templateFeeds: Feed[] = [
         scrape: true
     },
     {
-        id: "xkcd",
-        name: "xkcd",
+        id: "XKCD",
+        name: "XKCD",
         url: "https://xkcd.com/atom.xml",
         corsProxy: true,
         type: "atom",
         category: "comics",
         scrape: false
+    },
+    {
+        id: "github/hsldevcom/digitransit-ui",
+        name: "Commits of Digitransit UI",
+        category: "news",
+        corsProxy: true,
+        scrape: false,
+        type: "atom",
+        url: "https://github.com/hsldevcom/digitransit-ui/commits.atom"
     }
 ]
 
@@ -91,9 +100,10 @@ async function getFeed(feed: Feed) {
 
 async function renderPaper() {
     const parsed: [Feed, AnyFeed][] = (await Promise.all(feeds.map(async f => ([f, await getFeed(f)]))))
-    const combinedArticles: Article[] = (await Promise.all(parsed.map(p => parseArticles(p[0], p[1])))).flat().sort(() => Math.random() - 0.5)
+    const combinedArticles: Article[] = shuffleArray((await Promise.all(parsed.map(p => parseArticles(p[0], p[1])))).flat())
+    console.log(combinedArticles)
     const html = combinedArticles.map(articleToHTML)
-    document.body.innerHTML = `<section>${html.join("</section><section>")}</section>`
+    document.body.innerHTML = `<details>${html.join("</details><details>")}</details>`
 }
 
 async function parseArticles(feed: Feed, feedData: AnyFeed): Promise<Article[]> {
@@ -108,7 +118,7 @@ async function parseArticles(feed: Feed, feedData: AnyFeed): Promise<Article[]> 
                 link: i.link || ""
             })) || [])
         case "atom":
-            return await Promise.all(feedData.feed.entries?.slice(0,1).map<Promise<Article>>(async e => ({
+            return await Promise.all(feedData.feed.entries?.slice(0,10).map<Promise<Article>>(async e => ({
                 contents: feed.scrape ? (await getContents(e.links![0].href || "", feed)).filter(a => a.type == "paragraph" ? a.text != e.summary?.value: true) : [],
                 desc: e.summary?.value || "",
                 link: e.links![0].href || "",
@@ -158,7 +168,8 @@ async function getContents(feedUrl: string, feed: Feed): Promise<AnyContent[]> {
 
 function articleToHTML(a: Article): string {
     let text = `
-    <h1>${a.title}</h1>
+    <summary>${a.source.name} | ${a.title}</summary>
+    <h1>${a.source.name} | ${a.title}</h1>
     <p style="font-size: 1.5em;">${a.desc}</p>
     `
     a.contents.forEach(c => {
@@ -176,6 +187,16 @@ function articleToHTML(a: Article): string {
     })
     return text
 }
+
+
+function shuffleArray<T>(array: T[]): T[] {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array
+}
+
 
 
 renderPaper()
