@@ -1,7 +1,16 @@
 import { parseFeed, type AnyFeed } from "feedsmith"
+import * as pretext from "@chenglou/pretext"
 import "./style.css"
 
-const COLUMN_WIDTH = 200 //px
+const COLUMN_WIDTH = 400 //px
+const PAGE_WIDTH = 1280 //px
+const PAGE_HEIGHT = 800 //px
+const PAGE_MARGIN = 40 //px
+const FONT_SIZE = 11 //px
+const H1_MULT = 4.1 // compared to font size
+const H2_MULT = 3.1 // compared to font size
+const H3_MULT = 2.1 // compared to font size
+const H4_MULT = 1.6 // compared to font size
 
 export type ParagraphContent = {
     type: "paragraph",
@@ -29,7 +38,6 @@ export type Feed = {
     url: string,
     corsProxy: boolean,
     type: "rss" | "atom" | "rdf" | "json",
-    category: "news" | "comics",
     scrape: boolean
 }
 
@@ -45,11 +53,10 @@ export type Article = {
 const templateFeeds: Feed[] = [
     {
         id: "yle_main",
-        name: "Yle Main News",
+        name: "Yle",
         url: "https://yle.fi/rss/uutiset/paauutiset",
         corsProxy: true,
         type: "rss",
-        category: "news",
         scrape: true
     },
     {
@@ -58,16 +65,14 @@ const templateFeeds: Feed[] = [
         url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
         corsProxy: false,
         type: "rss",
-        category: "news",
         scrape: false
     },
     {
         id: "hs",
-        name: "HS Latest",
+        name: "HS",
         url: "https://www.hs.fi/rss/tuoreimmat.xml",
         corsProxy: false,
         type: "rss",
-        category: "news",
         scrape: true
     },
     {
@@ -76,13 +81,11 @@ const templateFeeds: Feed[] = [
         url: "https://xkcd.com/atom.xml",
         corsProxy: true,
         type: "atom",
-        category: "comics",
         scrape: false
     },
     {
         id: "github/hsldevcom/digitransit-ui",
         name: "Commits of Digitransit UI",
-        category: "news",
         corsProxy: true,
         scrape: false,
         type: "atom",
@@ -101,25 +104,41 @@ async function getFeed(feed: Feed) {
 async function renderPaper() {
     const parsed: [Feed, AnyFeed][] = (await Promise.all(feeds.map(async f => ([f, await getFeed(f)]))))
     const combinedArticles: Article[] = shuffleArray((await Promise.all(parsed.map(p => parseArticles(p[0], p[1])))).flat())
-    console.log(combinedArticles)
+
     const html = combinedArticles.map(articleToHTML)
-    document.body.innerHTML = `<details>${html.join("</details><details>")}</details>`
+    
+    const paper: HTMLDivElement = document.querySelector("#paper")!
+
+    // unit is columns/rows
+    const pageUsableSize = [Math.floor((PAGE_WIDTH - PAGE_MARGIN * 2) / COLUMN_WIDTH), Math.floor((PAGE_HEIGHT - PAGE_MARGIN * 2) / FONT_SIZE)]
+    const offset = [(PAGE_WIDTH - pageUsableSize[0] * COLUMN_WIDTH) / 2, (PAGE_HEIGHT - pageUsableSize[1] * FONT_SIZE) / 2]
+
+    paper.style.padding = `${offset[0]}px ${offset[1]}px`
+
+    // HOW TF DO I DO THISSSSSSSSSSSSS
+
+    const paragraph = document.createElement("div")
+    paragraph.style.width = `${COLUMN_WIDTH}px`
+    paragraph.style.height = `${pageUsableSize[1] * FONT_SIZE}px`
+    paragraph.classList.add("paragraph")
+    paragraph.innerHTML = `<details>${html.join("</details><details>")}</details>`
+    paper.appendChild(paragraph)
 }
 
 async function parseArticles(feed: Feed, feedData: AnyFeed): Promise<Article[]> {
     switch (feedData.format) {
         case "rss":
-            return await Promise.all(feedData.feed.items?.slice(0,10).map<Promise<Article>>(async i => ({
+            return await Promise.all(feedData.feed.items?.slice(0, 1).map<Promise<Article>>(async i => ({
                 source: feed,
                 time: i.pubDate || new Date().toISOString(),
                 title: i.title || "",
                 desc: i.description || "",
-                contents: feed.scrape ? (await getContents(i.link || "", feed)).filter(a => a.type == "paragraph" ? a.text != i.description: true) : [],
+                contents: feed.scrape ? (await getContents(i.link || "", feed)).filter(a => a.type == "paragraph" ? a.text != i.description : true) : [],
                 link: i.link || ""
             })) || [])
         case "atom":
-            return await Promise.all(feedData.feed.entries?.slice(0,10).map<Promise<Article>>(async e => ({
-                contents: feed.scrape ? (await getContents(e.links![0].href || "", feed)).filter(a => a.type == "paragraph" ? a.text != e.summary?.value: true) : [],
+            return await Promise.all(feedData.feed.entries?.slice(0, 1).map<Promise<Article>>(async e => ({
+                contents: feed.scrape ? (await getContents(e.links![0].href || "", feed)).filter(a => a.type == "paragraph" ? a.text != e.summary?.value : true) : [],
                 desc: e.summary?.value || "",
                 link: e.links![0].href || "",
                 source: feed,
@@ -142,19 +161,19 @@ async function getContents(feedUrl: string, feed: Feed): Promise<AnyContent[]> {
         figcaption, h2:not(aside h2), h3:not(aside h3), h4:not(aside h4))`).forEach((e, i, a) => {
         switch (e.tagName) {
             case "P":
-                contents.push({type: "paragraph", text: e.textContent})
+                contents.push({ type: "paragraph", text: e.textContent })
                 break;
             case "IMG":
-                contents.push({type: "image", src: (e as HTMLImageElement).src || null, alt: (e as HTMLImageElement).alt || null, caption: a[i+1] && a[i+1].tagName == "FIGCAPTION" ? a[i+1].textContent : null})
+                contents.push({ type: "image", src: (e as HTMLImageElement).src || null, alt: (e as HTMLImageElement).alt || null, caption: a[i + 1] && a[i + 1].tagName == "FIGCAPTION" ? a[i + 1].textContent : null })
                 break;
             case "H2":
-                contents.push({type: "header", level: 2, text: e.textContent})
+                contents.push({ type: "header", level: 2, text: e.textContent })
                 break;
             case "H3":
-                contents.push({type: "header", level: 3, text: e.textContent})
+                contents.push({ type: "header", level: 3, text: e.textContent })
                 break;
             case "H4":
-                contents.push({type: "header", level: 4, text: e.textContent})
+                contents.push({ type: "header", level: 4, text: e.textContent })
                 break;
             case "FIGCAPTION":
                 break;
@@ -197,6 +216,12 @@ function shuffleArray<T>(array: T[]): T[] {
     return array
 }
 
+
+document.getElementById("app")!.innerHTML = `
+<div id="paper">
+
+</div>
+`
 
 
 renderPaper()

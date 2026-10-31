@@ -1,0 +1,14 @@
+#paper {
+    font-family: 'Times New Roman', Times, serif;
+    background-color: #ddd;
+    color: #111;
+}
+
+.paragraph {
+    height: 100%;
+    overflow: hidden;
+}
+
+img {
+    width: 100%;
+}
