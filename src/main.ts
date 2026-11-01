@@ -6,15 +6,21 @@ const COLUMN_WIDTH = 400 //px
 const PAGE_WIDTH = 1280 //px
 const PAGE_HEIGHT = 800 //px
 const PAGE_MARGIN = 40 //px
-const FONT_SIZE = 11 //px
-const H1_MULT = 4.1 // compared to font size
-const H2_MULT = 3.1 // compared to font size
-const H3_MULT = 2.1 // compared to font size
-const H4_MULT = 1.6 // compared to font size
+const FONT_SIZE = 16 //px
+const P_MULT = 1 // compared to font size
+const H1_MULT = 2.1 // compared to font size
+const H2_MULT = 1.8 // compared to font size
+const H3_MULT = 1.6 // compared to font size
+const H4_MULT = 1.4 // compared to font size
 
 export type ParagraphContent = {
     type: "paragraph",
     text: string
+}
+
+export type HTMLContent = {
+    type: "html",
+    html: string
 }
 
 export type HeaderContent = {
@@ -30,7 +36,7 @@ export type ImageContent = {
     caption: string | null
 }
 
-export type AnyContent = ParagraphContent | HeaderContent | ImageContent
+export type AnyContent = ParagraphContent | HeaderContent | ImageContent | HTMLContent
 
 export type Feed = {
     id: string,
@@ -50,6 +56,11 @@ export type Article = {
     link: string,
 }
 
+export type GridItem = {
+    height: number,
+    id: string
+}
+
 const templateFeeds: Feed[] = [
     {
         id: "yle_main",
@@ -58,7 +69,7 @@ const templateFeeds: Feed[] = [
         corsProxy: true,
         type: "rss",
         scrape: true
-    },
+    }/* ,
     {
         id: "nyt",
         name: "New York Times",
@@ -90,10 +101,12 @@ const templateFeeds: Feed[] = [
         scrape: false,
         type: "atom",
         url: "https://github.com/hsldevcom/digitransit-ui/commits.atom"
-    }
+    } */
 ]
 
 let feeds: Feed[] = templateFeeds
+
+let articles: Article[] = []
 
 async function getFeed(feed: Feed) {
     const text = await (await fetch(`${feed.corsProxy ? "https://cors-proxy.hekinav.dev/" : ""}${feed.url}`)).text()
@@ -101,12 +114,16 @@ async function getFeed(feed: Feed) {
     return data
 }
 
-async function renderPaper() {
+async function getPaper() {
     const parsed: [Feed, AnyFeed][] = (await Promise.all(feeds.map(async f => ([f, await getFeed(f)]))))
-    const combinedArticles: Article[] = shuffleArray((await Promise.all(parsed.map(p => parseArticles(p[0], p[1])))).flat())
+    articles = shuffleArray((await Promise.all(parsed.map(p => parseArticles(p[0], p[1])))).flat())
 
-    const html = combinedArticles.map(articleToHTML)
-    
+    await renderPaper()
+}
+
+async function renderPaper() {
+    let remaining = [...articles]
+
     const paper: HTMLDivElement = document.querySelector("#paper")!
 
     // unit is columns/rows
@@ -115,20 +132,104 @@ async function renderPaper() {
 
     paper.style.padding = `${offset[0]}px ${offset[1]}px`
 
-    // HOW TF DO I DO THISSSSSSSSSSSSS
+    let paperGrid: GridItem[][] = []
 
-    const paragraph = document.createElement("div")
-    paragraph.style.width = `${COLUMN_WIDTH}px`
-    paragraph.style.height = `${pageUsableSize[1] * FONT_SIZE}px`
-    paragraph.classList.add("paragraph")
-    paragraph.innerHTML = `<details>${html.join("</details><details>")}</details>`
-    paper.appendChild(paragraph)
+    while (remaining.length > 0) {
+
+        let article = remaining.slice(0, 1)[0]
+
+        const wtitlePrepared = pretext.prepare(article.title, `${FONT_SIZE * H1_MULT}px Times New Roman`)
+        const wtitlelayout = pretext.layout(wtitlePrepared, COLUMN_WIDTH, Math.ceil(H1_MULT) * FONT_SIZE)
+
+        const bodyHeight = (await Promise.all(article.contents.map(c => getHeight(c, COLUMN_WIDTH)))).reduce((n, p) => n + p, 0)
+
+        let article_cols = Math.max(Math.ceil(wtitlelayout.lineCount / 2), Math.ceil(bodyHeight / (pageUsableSize[1] * FONT_SIZE)))
+
+        const titleHeight = await getHeight({ type: "header", level: 1, text: article.title }, COLUMN_WIDTH * article_cols)
+
+
+
+        const paragraphHeight = Math.ceil((bodyHeight - titleHeight) / article_cols / FONT_SIZE) * FONT_SIZE
+
+
+        for (let i = 0; i < article_cols; i++) {
+            let total = 0
+            const paragraph = document.createElement("div")
+            paragraph.style.width = `${COLUMN_WIDTH}px`
+            paragraph.style.height = `${paragraphHeight}px`
+            paragraph.classList.add("paragraph")
+
+            let nextColumn = paperGrid.findIndex(c => c.reduce<number>((p, i) => p + i.height, 0) < pageUsableSize[1])
+            if (nextColumn == -1) nextColumn = paperGrid.length
+            if (!paperGrid[nextColumn]) paperGrid[nextColumn] = []
+            const nextColumnFree = pageUsableSize[1] * FONT_SIZE - paperGrid[nextColumn].reduce<number>((p, i) => p + i.height, 0)
+
+            const id = crypto.randomUUID()
+
+            paragraph.style.gridArea = id
+
+            while (total < Math.min(paragraphHeight, nextColumnFree)) {
+                const item = article.contents.slice(0, 1)[0]
+                if (!item) break
+                const height = await getHeight(item, COLUMN_WIDTH)
+                total += height
+                if (total < Math.min(paragraphHeight, nextColumnFree) - 6) {
+                    paragraph.innerHTML += contentToHTML(item, height)
+                    article.contents.splice(0, 1)
+                }
+                paper.appendChild(paragraph)
+            }
+            paperGrid[nextColumn].push({ height: Math.min(paragraphHeight, nextColumnFree), id: id })
+        }
+        remaining.splice(0, 1)
+    }
+    console.log(`"${paperGrid.map(c => c.map(e => e.id).join(" ")).join('"\n"')}"`)
+    paper.style.gridTemplateAreas = `"${paperGrid.map(c => c.map(e => e.id).join(" ")).join('"\n"')}"`
+    paper.style.gridTemplateColumns = `repeat(${paperGrid.length}, 1fr)`
+}
+
+async function getHeight(item: AnyContent, width: number): Promise<number> {
+    if (item.type == "image" || item.type == "html") {
+        return await new Promise((res) => {
+            const parser = new DOMParser()
+            let el = parser.parseFromString(contentToHTML(item), "text/html").body.firstChild as HTMLElement | null
+            if (!el) return res(0)
+            el.style.position = "fixed"
+            el.style.width = `${width}px`
+
+            document.body.appendChild(el)
+
+            function end() {
+                if (!el) return res(0)
+                document.body.removeChild(el)
+                res(el.offsetHeight)
+            }
+
+            if (el.tagName === 'IMG') {
+                if ((el as HTMLImageElement).complete) {
+                    end();
+                } else {
+                    el.addEventListener("load", end)
+                    el.addEventListener("error", () => {
+                        res(0)
+                    })
+                }
+            } else {
+                end()
+            }
+        })
+    } else {
+        const mult = (item.type == "paragraph" ? P_MULT : item.level == 1 ? H1_MULT : item.level == 2 ? H2_MULT : item.level == 3 ? H3_MULT : H4_MULT)
+        const prepared = pretext.prepare(item.text, `${FONT_SIZE * mult}px Times New Roman`)
+        const layout = pretext.layout(prepared, width, Math.ceil(mult) * FONT_SIZE)
+        return item.type == "paragraph" ? layout.height + 6 : layout.height
+    }
 }
 
 async function parseArticles(feed: Feed, feedData: AnyFeed): Promise<Article[]> {
     switch (feedData.format) {
         case "rss":
-            return await Promise.all(feedData.feed.items?.slice(0, 1).map<Promise<Article>>(async i => ({
+            return await Promise.all(feedData.feed.items?.slice(0, 10).map<Promise<Article>>(async i => ({
                 source: feed,
                 time: i.pubDate || new Date().toISOString(),
                 title: i.title || "",
@@ -137,7 +238,7 @@ async function parseArticles(feed: Feed, feedData: AnyFeed): Promise<Article[]> 
                 link: i.link || ""
             })) || [])
         case "atom":
-            return await Promise.all(feedData.feed.entries?.slice(0, 1).map<Promise<Article>>(async e => ({
+            return await Promise.all(feedData.feed.entries?.slice(0, 10).map<Promise<Article>>(async e => ({
                 contents: feed.scrape ? (await getContents(e.links![0].href || "", feed)).filter(a => a.type == "paragraph" ? a.text != e.summary?.value : true) : [],
                 desc: e.summary?.value || "",
                 link: e.links![0].href || "",
@@ -158,7 +259,7 @@ async function getContents(feedUrl: string, feed: Feed): Promise<AnyContent[]> {
         article section
         :is(p:not(figcaption p${feed.id == "hs" ? ", .picture-fragment-container p" : ""}, aside p), 
         img${feed.id == "hs" ? ":not(.gap-nof-12.flex.flex-row.items-center.mb-nof-24 img)" : feed.id == "yle_main" ? ":not(a img)" : ""}, 
-        figcaption, h2:not(aside h2), h3:not(aside h3), h4:not(aside h4))`).forEach((e, i, a) => {
+        figcaption, h2:not(aside h2), h3:not(aside h3),h4:not(aside h4))`).forEach((e, i, a) => {
         switch (e.tagName) {
             case "P":
                 contents.push({ type: "paragraph", text: e.textContent })
@@ -185,26 +286,17 @@ async function getContents(feedUrl: string, feed: Feed): Promise<AnyContent[]> {
     return contents
 }
 
-function articleToHTML(a: Article): string {
-    let text = `
-    <summary>${a.source.name} | ${a.title}</summary>
-    <h1>${a.source.name} | ${a.title}</h1>
-    <p style="font-size: 1.5em;">${a.desc}</p>
-    `
-    a.contents.forEach(c => {
-        switch (c.type) {
-            case "paragraph":
-                text += `<p>${c.text}</p>`
-                break
-            case "header":
-                text += `<h${c.level}>${c.text}</h${c.level}>`
-                break
-            case "image":
-                text += `<figure><img src="${c.src}" alt="${c.alt}">${c.caption ? `<figcaption>${c.caption}</figcaption>` : ""}</figure>`
-                break
-        }
-    })
-    return text
+function contentToHTML(c: AnyContent, h?: number): string {
+    switch (c.type) {
+        case "paragraph":
+            return `<p style="font-size: ${FONT_SIZE * P_MULT}px; margin: 6px 0">${c.text}</p>`
+        case "header":
+            return `<h${c.level} style="font-size: ${FONT_SIZE * (c.level == 1 ? H1_MULT : c.level == 2 ? H2_MULT : c.level == 3 ? H3_MULT : H4_MULT)}px; height: ${h}px">${c.text}</h${c.level}>`
+        case "image":
+            return `<figure><img src="${c.src}" alt="${c.alt}">${c.caption ? `<figcaption>${c.caption}</figcaption>` : ""}</figure>`
+        case "html":
+            return c.html
+    }
 }
 
 
@@ -224,4 +316,4 @@ document.getElementById("app")!.innerHTML = `
 `
 
 
-renderPaper()
+getPaper()

@@ -2,13 +2,26 @@
     font-family: 'Times New Roman', Times, serif;
     background-color: #ddd;
     color: #111;
+    display: grid;
+    overflow: scroll;
 }
 
 .paragraph {
     height: 100%;
-    overflow: hidden;
+    /* overflow: hidden; */
 }
 
 img {
     width: 100%;
+    filter: grayscale(0.8);
+}
+
+figure {
+    /* TEMP */
+    display: none;
+}
+
+h1, h2, h3, h4 {
+    /* This is overridden in JS */
+    margin: 0;
 }
