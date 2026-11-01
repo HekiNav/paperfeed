@@ -4,9 +4,9 @@ A very WIP and broken RSS viewer and web scraper system that compiles posts into
 
 ## CORS Proxy
 
-Some feeds require an RSS proxy to be used. For this, please run your own, for example [this one](https://github.com/Rob--W/cors-anywhere). The proxy will forward requsts with the correct headers to the client.
+Some feeds require an RSS proxy to be used due to the origin RSS server not providing the correct CORS HTTP headers. For this, please run your own, for example [this one](https://github.com/Rob--W/cors-anywhere). The proxy will forward requsts with the correct headers to the client. To avoid third party abuse of the cors proxy server, it is recommended to configure rate or speed limiting.
 
-## usage
+## Usage
 
 1. Install `npm install`
 2. Dev `npm run dev`
