@@ -1,6 +1,6 @@
 # paperfeed
 
-A very WIP and broken RSS viewer and web scraper system that compiles posts into a newspaper-like view
+A very WIP and broken RSS viewer and web scraper system that compiles posts into a newspaper-like view. Built using Vite and pretext.js. The project will be updated later with bug fixes and improvements
 
 ## usage
 
