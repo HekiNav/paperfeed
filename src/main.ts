@@ -69,7 +69,7 @@ const templateFeeds: Feed[] = [
         corsProxy: true,
         type: "rss",
         scrape: true
-    }/* ,
+    },
     {
         id: "nyt",
         name: "New York Times",
@@ -101,7 +101,7 @@ const templateFeeds: Feed[] = [
         scrape: false,
         type: "atom",
         url: "https://github.com/hsldevcom/digitransit-ui/commits.atom"
-    } */
+    }
 ]
 
 let feeds: Feed[] = templateFeeds
@@ -130,7 +130,13 @@ async function renderPaper() {
     const pageUsableSize = [Math.floor((PAGE_WIDTH - PAGE_MARGIN * 2) / COLUMN_WIDTH), Math.floor((PAGE_HEIGHT - PAGE_MARGIN * 2) / FONT_SIZE)]
     const offset = [(PAGE_WIDTH - pageUsableSize[0] * COLUMN_WIDTH) / 2, (PAGE_HEIGHT - pageUsableSize[1] * FONT_SIZE) / 2]
 
-    paper.style.padding = `${offset[0]}px ${offset[1]}px`
+    function reloadPaper() {
+        paper.style.padding = `${offset[0]}px ${offset[1]}px`
+        paper.style.gridTemplateAreas = `"${transpose(paperGrid).map(c => c.reduce<string[]>((p, e) => e ? [...p, e.id] : p, []).join(" ")).join('"\n"')}"`
+        paper.style.gridTemplateColumns = `repeat(${paperGrid.length}, 1fr)`
+        paper.style.width = `${PAGE_WIDTH - PAGE_MARGIN * 2}px`
+        paper.style.height = `${PAGE_HEIGHT - PAGE_MARGIN * 2}px`
+    }
 
     let paperGrid: GridItem[][] = []
 
@@ -143,49 +149,75 @@ async function renderPaper() {
 
         const bodyHeight = (await Promise.all(article.contents.map(c => getHeight(c, COLUMN_WIDTH)))).reduce((n, p) => n + p, 0)
 
-        let article_cols = Math.max(Math.ceil(wtitlelayout.lineCount / 2), Math.ceil(bodyHeight / (pageUsableSize[1] * FONT_SIZE)))
+        let article_cols = Math.max(Math.ceil(wtitlelayout.lineCount / 3), Math.ceil(bodyHeight / (pageUsableSize[1] * FONT_SIZE)))
 
         const titleHeight = await getHeight({ type: "header", level: 1, text: article.title }, COLUMN_WIDTH * article_cols)
 
-
-
         const paragraphHeight = Math.ceil((bodyHeight - titleHeight) / article_cols / FONT_SIZE) * FONT_SIZE
 
+        let firstCol: number = paperGrid.findIndex(c => c.reduce<number>((p, i) => p + i.height, 0) < 0.4 * pageUsableSize[1] * FONT_SIZE)
+        if (firstCol == -1) firstCol = paperGrid.length
 
-        for (let i = 0; i < article_cols; i++) {
-            let total = 0
-            const paragraph = document.createElement("div")
-            paragraph.style.width = `${COLUMN_WIDTH}px`
-            paragraph.style.height = `${paragraphHeight}px`
-            paragraph.classList.add("paragraph")
-
-            let nextColumn = paperGrid.findIndex(c => c.reduce<number>((p, i) => p + i.height, 0) < pageUsableSize[1])
-            if (nextColumn == -1) nextColumn = paperGrid.length
-            if (!paperGrid[nextColumn]) paperGrid[nextColumn] = []
-            const nextColumnFree = pageUsableSize[1] * FONT_SIZE - paperGrid[nextColumn].reduce<number>((p, i) => p + i.height, 0)
-
-            const id = crypto.randomUUID()
-
-            paragraph.style.gridArea = id
-
-            while (total < Math.min(paragraphHeight, nextColumnFree)) {
-                const item = article.contents.slice(0, 1)[0]
-                if (!item) break
-                const height = await getHeight(item, COLUMN_WIDTH)
-                total += height
-                if (total < Math.min(paragraphHeight, nextColumnFree) - 6) {
-                    paragraph.innerHTML += contentToHTML(item, height)
-                    article.contents.splice(0, 1)
-                }
-                paper.appendChild(paragraph)
-            }
-            paperGrid[nextColumn].push({ height: Math.min(paragraphHeight, nextColumnFree), id: id })
-        }
         remaining.splice(0, 1)
+
+        if (firstCol < pageUsableSize[0]) {
+            const titleId = "T-" + crypto.randomUUID().slice(0, 8)
+
+            for (let i = 0; i < article_cols; i++) {
+                if (!paperGrid[firstCol + i]) paperGrid[firstCol + i] = []
+                const col = paperGrid[firstCol + i]
+                if (col) col.push({ height: titleHeight, id: titleId })
+            }
+
+            const title = document.createElement("h1")
+            title.innerHTML = article.title
+            title.style.height = `${titleHeight}px`
+            title.style.fontSize = `${FONT_SIZE * H1_MULT}px`
+
+            paper.appendChild(title)
+            reloadPaper()
+
+            title.style.gridArea = titleId
+
+            for (let i = 0; i < article_cols; i++) {
+                let total = 0
+
+                let nextColumn = paperGrid.findIndex(c => c.reduce<number>((p, i) => p + i.height, 0) < 0.4 * pageUsableSize[1] * FONT_SIZE)
+                if (nextColumn == -1) nextColumn = paperGrid.length
+                if (nextColumn >= pageUsableSize[0]) break
+                if (!paperGrid[nextColumn]) paperGrid[nextColumn] = []
+                const nextColumnFree = pageUsableSize[1] * FONT_SIZE - paperGrid[nextColumn].reduce<number>((p, i) => p + i.height, 0)
+
+                const id = "P-" + crypto.randomUUID().slice(0, 8)
+
+                const paragraph = document.createElement("div")
+                paragraph.style.width = `${COLUMN_WIDTH}px`
+                paragraph.style.height = `${paragraphHeight}px`
+                paragraph.style.gridArea = id
+                paragraph.classList.add("paragraph")
+
+                while (total < Math.min(paragraphHeight, nextColumnFree)) {
+                    const item = article.contents.slice(0, 1)[0]
+                    if (!item) break
+                    const height = await getHeight(item, COLUMN_WIDTH)
+                    total += height
+                    if (total < Math.min(paragraphHeight, nextColumnFree) - 6) {
+                        paragraph.innerHTML += contentToHTML(item, height)
+                        article.contents.splice(0, 1)
+                    }
+                }
+
+                paperGrid[nextColumn].push({ height: Math.min(paragraphHeight, nextColumnFree), id: id })
+                paper.appendChild(paragraph)
+                reloadPaper()
+                console.log(id)
+            }
+        }
     }
-    console.log(`"${paperGrid.map(c => c.map(e => e.id).join(" ")).join('"\n"')}"`)
-    paper.style.gridTemplateAreas = `"${paperGrid.map(c => c.map(e => e.id).join(" ")).join('"\n"')}"`
-    paper.style.gridTemplateColumns = `repeat(${paperGrid.length}, 1fr)`
+}
+
+function transpose<T>(matrix: T[][]) {
+    return matrix[0].map((col, i) => matrix.map(row => row[i]));
 }
 
 async function getHeight(item: AnyContent, width: number): Promise<number> {
@@ -195,14 +227,14 @@ async function getHeight(item: AnyContent, width: number): Promise<number> {
             let el = parser.parseFromString(contentToHTML(item), "text/html").body.firstChild as HTMLElement | null
             if (!el) return res(0)
             el.style.position = "fixed"
-            el.style.width = `${width}px`
+            el.style.width = `${width - 32}px`
 
             document.body.appendChild(el)
 
             function end() {
                 if (!el) return res(0)
-                document.body.removeChild(el)
                 res(el.offsetHeight)
+                document.body.removeChild(el)
             }
 
             if (el.tagName === 'IMG') {

@@ -3,7 +3,6 @@
     background-color: #ddd;
     color: #111;
     display: grid;
-    overflow: scroll;
 }
 
 .paragraph {
@@ -11,14 +10,13 @@
     /* overflow: hidden; */
 }
 
+figure {
+    margin: 16px;
+}
+
 img {
     width: 100%;
     filter: grayscale(0.8);
-}
-
-figure {
-    /* TEMP */
-    display: none;
 }
 
 h1, h2, h3, h4 {
