@@ -69,7 +69,7 @@ const templateFeeds: Feed[] = [
         corsProxy: true,
         type: "rss",
         scrape: true
-    },
+    }/* ,
     {
         id: "nyt",
         name: "New York Times",
@@ -101,7 +101,7 @@ const templateFeeds: Feed[] = [
         scrape: false,
         type: "atom",
         url: "https://github.com/hsldevcom/digitransit-ui/commits.atom"
-    }
+    } */
 ]
 
 let feeds: Feed[] = templateFeeds
@@ -217,7 +217,7 @@ async function renderPaper() {
 }
 
 function transpose<T>(matrix: T[][]) {
-    return matrix[0].map((col, i) => matrix.map(row => row[i]));
+    return matrix[0].map((_, i) => matrix.map(row => row[i]));
 }
 
 async function getHeight(item: AnyContent, width: number): Promise<number> {
